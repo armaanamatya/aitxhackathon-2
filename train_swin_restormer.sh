@@ -63,7 +63,7 @@ python3 src/training/train_swin_restormer.py \
     --data_root . \
     --jsonl_path train.jsonl \
     --output_dir outputs_swin_restormer \
-    --image_size 256 \
+    --image_size 224 \
     --model_size small \
     --batch_size 4 \
     --stage1_epochs 30 \

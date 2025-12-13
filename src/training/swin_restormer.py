@@ -218,8 +218,11 @@ class SwinEncoder(nn.Module):
 
         Returns:
             List of features at 4 scales: [1/4, 1/8, 1/16, 1/32] of input resolution
+            Each feature has shape [B, C, H, W]
         """
         features = self.swin(x)
+        # Swin outputs [B, H, W, C], convert to [B, C, H, W] for Conv2d
+        features = [f.permute(0, 3, 1, 2).contiguous() for f in features]
         return features
 
 

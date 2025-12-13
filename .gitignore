@@ -37,3 +37,8 @@ logs/
 # Temporary
 tmp/
 temp/
+
+# Misc
+claude.md
+*.swp
+*.pdf
