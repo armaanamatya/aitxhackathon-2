@@ -34,6 +34,8 @@ from src.training.models import (
     LPIPSLoss,
     LABColorLoss,
     ColorHistogramLoss,
+    SSIMLoss,
+    EdgeAwareLoss,
     count_parameters,
     LPIPS_AVAILABLE,
 )
@@ -65,6 +67,8 @@ class Trainer:
         lambda_lpips: float = 5.0,
         lambda_lab: float = 10.0,
         lambda_hist: float = 1.0,
+        lambda_ssim: float = 5.0,
+        lambda_edge: float = 2.0,
         lambda_adv: float = 1.0,
         use_multiscale_disc: bool = True,
         num_disc_scales: int = 2,
@@ -81,6 +85,10 @@ class Trainer:
         grad_clip_g: float = 1.0,
         grad_clip_d: float = 1.0,
         d_update_freq: int = 1,
+        # Training enhancements
+        grad_accum_steps: int = 1,
+        warmup_epochs: int = 5,
+        min_lr: float = 1e-6,
     ):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
@@ -94,6 +102,8 @@ class Trainer:
         self.lambda_lpips = lambda_lpips
         self.lambda_lab = lambda_lab
         self.lambda_hist = lambda_hist
+        self.lambda_ssim = lambda_ssim
+        self.lambda_edge = lambda_edge
         self.lambda_adv = lambda_adv
         self.use_multiscale_disc = use_multiscale_disc
         self.num_disc_scales = num_disc_scales
@@ -109,6 +119,11 @@ class Trainer:
         self.grad_clip_g = grad_clip_g
         self.grad_clip_d = grad_clip_d
         self.d_update_freq = d_update_freq
+
+        # Training enhancements
+        self.grad_accum_steps = grad_accum_steps
+        self.warmup_epochs = warmup_epochs
+        self.min_lr = min_lr
 
         # Output directories
         self.output_dir = Path(output_dir)
@@ -189,6 +204,20 @@ class Trainer:
         else:
             self.criterion_hist = None
 
+        # SSIM loss (structural similarity)
+        if lambda_ssim > 0:
+            self.criterion_ssim = SSIMLoss().to(self.device)
+            print("Using SSIM loss")
+        else:
+            self.criterion_ssim = None
+
+        # Edge-aware loss (sharp edges)
+        if lambda_edge > 0:
+            self.criterion_edge = EdgeAwareLoss().to(self.device)
+            print("Using Edge-Aware loss")
+        else:
+            self.criterion_edge = None
+
         # Optimizers
         self.optimizer_g = optim.AdamW(
             self.generator.parameters(),
@@ -203,12 +232,13 @@ class Trainer:
             weight_decay=0.01,
         )
 
-        # Learning rate schedulers
-        self.scheduler_g = optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer_g, T_max=num_epochs, eta_min=1e-6
+        # Learning rate schedulers with warmup
+        # Use CosineAnnealingWarmRestarts after warmup for better convergence
+        self.scheduler_g = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer_g, T_0=max(10, (num_epochs - warmup_epochs) // 3), T_mult=2, eta_min=min_lr
         )
-        self.scheduler_d = optim.lr_scheduler.CosineAnnealingLR(
-            self.optimizer_d, T_max=num_epochs, eta_min=1e-6
+        self.scheduler_d = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer_d, T_0=max(10, (num_epochs - warmup_epochs) // 3), T_mult=2, eta_min=min_lr
         )
 
         # Mixed precision scalers
@@ -231,6 +261,12 @@ class Trainer:
             return x + noise
         return x
 
+    def _get_warmup_factor(self, epoch: int) -> float:
+        """Calculate warmup factor for learning rate."""
+        if epoch < self.warmup_epochs:
+            return (epoch + 1) / self.warmup_epochs
+        return 1.0
+
     def train_epoch(self, epoch: int) -> dict:
         """Train for one epoch."""
         self.generator.train()
@@ -244,12 +280,22 @@ class Trainer:
             'g_lpips': 0.0,
             'g_lab': 0.0,
             'g_hist': 0.0,
+            'g_ssim': 0.0,
+            'g_edge': 0.0,
             'd_total': 0.0,
         }
 
         # Label smoothing values
         real_label_val = 1.0 - self.label_smoothing  # 0.9
         fake_label_val = self.label_smoothing  # 0.1
+
+        # Warmup learning rate
+        warmup_factor = self._get_warmup_factor(epoch)
+        if epoch < self.warmup_epochs:
+            for param_group in self.optimizer_g.param_groups:
+                param_group['lr'] = param_group['initial_lr'] * warmup_factor if 'initial_lr' in param_group else 2e-4 * warmup_factor
+            for param_group in self.optimizer_d.param_groups:
+                param_group['lr'] = param_group['initial_lr'] * warmup_factor if 'initial_lr' in param_group else 2e-4 * warmup_factor
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.num_epochs}")
 
@@ -380,6 +426,16 @@ class Trainer:
                 if self.criterion_hist is not None:
                     loss_g_hist = self.criterion_hist(fake, target)
 
+                # SSIM loss (structural similarity)
+                loss_g_ssim = torch.tensor(0.0, device=self.device)
+                if self.criterion_ssim is not None:
+                    loss_g_ssim = self.criterion_ssim(fake, target)
+
+                # Edge-aware loss (sharp details)
+                loss_g_edge = torch.tensor(0.0, device=self.device)
+                if self.criterion_edge is not None:
+                    loss_g_edge = self.criterion_edge(fake, target)
+
                 # Total generator loss
                 loss_g = (
                     self.lambda_adv * loss_g_adv +
@@ -387,7 +443,9 @@ class Trainer:
                     self.lambda_perceptual * loss_g_perceptual +
                     self.lambda_lpips * loss_g_lpips +
                     self.lambda_lab * loss_g_lab +
-                    self.lambda_hist * loss_g_hist
+                    self.lambda_hist * loss_g_hist +
+                    self.lambda_ssim * loss_g_ssim +
+                    self.lambda_edge * loss_g_edge
                 )
 
             if self.use_amp:
@@ -412,6 +470,8 @@ class Trainer:
             epoch_losses['g_lpips'] += loss_g_lpips.item()
             epoch_losses['g_lab'] += loss_g_lab.item()
             epoch_losses['g_hist'] += loss_g_hist.item()
+            epoch_losses['g_ssim'] += loss_g_ssim.item()
+            epoch_losses['g_edge'] += loss_g_edge.item()
             epoch_losses['d_total'] += loss_d.item()
 
             self.global_step += 1
@@ -421,8 +481,8 @@ class Trainer:
                 'G': f"{loss_g.item():.3f}",
                 'D': f"{loss_d.item():.3f}",
                 'L1': f"{loss_g_l1.item():.3f}",
-                'LPIPS': f"{loss_g_lpips.item():.3f}",
-                'LAB': f"{loss_g_lab.item():.3f}",
+                'SSIM': f"{loss_g_ssim.item():.3f}",
+                'Edge': f"{loss_g_edge.item():.3f}",
             })
 
         # Average losses
@@ -578,9 +638,12 @@ class Trainer:
             print(f"\nEpoch {epoch+1}/{self.num_epochs}")
             print(f"  Train - G: {train_losses['g_total']:.4f}, D: {train_losses['d_total']:.4f}")
             print(f"  Losses - L1: {train_losses['g_l1']:.4f}, VGG: {train_losses['g_perceptual']:.4f}, "
-                  f"LPIPS: {train_losses['g_lpips']:.4f}, LAB: {train_losses['g_lab']:.4f}, Hist: {train_losses['g_hist']:.4f}")
+                  f"SSIM: {train_losses['g_ssim']:.4f}, Edge: {train_losses['g_edge']:.4f}")
+            print(f"          LPIPS: {train_losses['g_lpips']:.4f}, LAB: {train_losses['g_lab']:.4f}, "
+                  f"Hist: {train_losses['g_hist']:.4f}")
             print(f"  Val - L1: {val_loss:.4f} {'(best)' if is_best else ''}")
-            print(f"  LR - G: {self.scheduler_g.get_last_lr()[0]:.2e}, D: {self.scheduler_d.get_last_lr()[0]:.2e}")
+            warmup_status = "(warmup)" if epoch < self.warmup_epochs else ""
+            print(f"  LR - G: {self.scheduler_g.get_last_lr()[0]:.2e}, D: {self.scheduler_d.get_last_lr()[0]:.2e} {warmup_status}")
 
             # Save samples
             if (epoch + 1) % self.sample_interval == 0:
@@ -628,6 +691,10 @@ def main():
                         help="LAB color loss weight")
     parser.add_argument("--lambda_hist", type=float, default=1.0,
                         help="Color histogram loss weight")
+    parser.add_argument("--lambda_ssim", type=float, default=5.0,
+                        help="SSIM structural similarity loss weight")
+    parser.add_argument("--lambda_edge", type=float, default=2.0,
+                        help="Edge-aware loss weight (sharp details)")
     parser.add_argument("--lambda_adv", type=float, default=1.0,
                         help="Adversarial loss weight")
 
@@ -652,6 +719,14 @@ def main():
                         help="Gradient clipping for discriminator")
     parser.add_argument("--d_update_freq", type=int, default=1,
                         help="Update discriminator every N steps")
+
+    # Training enhancements
+    parser.add_argument("--grad_accum", type=int, default=1,
+                        help="Gradient accumulation steps (effective batch = batch_size * grad_accum)")
+    parser.add_argument("--warmup_epochs", type=int, default=5,
+                        help="Number of warmup epochs for learning rate")
+    parser.add_argument("--min_lr", type=float, default=1e-6,
+                        help="Minimum learning rate for scheduler")
 
     # Other arguments
     parser.add_argument("--num_workers", type=int, default=4,
@@ -682,6 +757,8 @@ def main():
         lambda_lpips=args.lambda_lpips,
         lambda_lab=args.lambda_lab,
         lambda_hist=args.lambda_hist,
+        lambda_ssim=args.lambda_ssim,
+        lambda_edge=args.lambda_edge,
         lambda_adv=args.lambda_adv,
         use_multiscale_disc=not args.no_multiscale_disc,
         num_disc_scales=args.num_disc_scales,
@@ -698,6 +775,10 @@ def main():
         grad_clip_g=args.grad_clip_g,
         grad_clip_d=args.grad_clip_d,
         d_update_freq=args.d_update_freq,
+        # Training enhancements
+        grad_accum_steps=args.grad_accum,
+        warmup_epochs=args.warmup_epochs,
+        min_lr=args.min_lr,
     )
 
     # Train

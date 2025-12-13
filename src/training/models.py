@@ -840,6 +840,63 @@ class ColorHistogramLoss(nn.Module):
         return F.l1_loss(gen_hist, tar_hist)
 
 
+class EdgeAwareLoss(nn.Module):
+    """
+    Edge-Aware Loss for preserving sharp edges.
+
+    Critical for real estate photos where furniture edges, walls,
+    and window frames need to remain crisp.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        # Sobel filters for edge detection
+        sobel_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32)
+        sobel_y = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32)
+
+        self.register_buffer('sobel_x', sobel_x.view(1, 1, 3, 3).repeat(3, 1, 1, 1))
+        self.register_buffer('sobel_y', sobel_y.view(1, 1, 3, 3).repeat(3, 1, 1, 1))
+
+    def _compute_edges(self, img: torch.Tensor) -> torch.Tensor:
+        """Compute edge magnitude using Sobel filters."""
+        edges_x = F.conv2d(img, self.sobel_x, padding=1, groups=3)
+        edges_y = F.conv2d(img, self.sobel_y, padding=1, groups=3)
+        return torch.sqrt(edges_x ** 2 + edges_y ** 2 + 1e-8)
+
+    def forward(
+        self,
+        generated: torch.Tensor,
+        target: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Compute edge-aware loss.
+
+        Args:
+            generated: Generated image [B, 3, H, W] in [-1, 1]
+            target: Target image [B, 3, H, W] in [-1, 1]
+
+        Returns:
+            Edge-aware loss (scalar)
+        """
+        # Convert to [0, 1]
+        gen = (generated + 1) / 2
+        tar = (target + 1) / 2
+
+        # Compute edges
+        gen_edges = self._compute_edges(gen)
+        tar_edges = self._compute_edges(tar)
+
+        # Edge similarity loss - ensure generated edges match target edges
+        edge_loss = F.l1_loss(gen_edges, tar_edges)
+
+        # Edge-weighted pixel loss - penalize more at edges
+        edge_weight = 1 + tar_edges.mean(dim=1, keepdim=True)
+        weighted_pixel_loss = (torch.abs(gen - tar) * edge_weight).mean()
+
+        return 0.5 * edge_loss + 0.5 * weighted_pixel_loss
+
+
 def count_parameters(model: nn.Module) -> int:
     """Count trainable parameters in a model."""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
