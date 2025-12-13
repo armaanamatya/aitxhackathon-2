@@ -270,8 +270,8 @@ class HDRDataset(Dataset):
     def __getitem__(self, idx):
         item = self.samples[idx]
 
-        source_path = self.data_root / item['source']
-        target_path = self.data_root / item['target']
+        source_path = self.data_root / item['src']
+        target_path = self.data_root / item['tar']
 
         source = Image.open(source_path).convert('RGB')
         target = Image.open(target_path).convert('RGB')
