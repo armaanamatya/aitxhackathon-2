@@ -223,6 +223,51 @@ def load_retinexmamba_model(checkpoint_path: Optional[str] = None, device: torch
     return model.to(device)
 
 
+def load_controlnet_model(checkpoint_path: Optional[str] = None, device: torch.device = None):
+    """Load ControlNet HDR model."""
+    from src.training.controlnet import ControlNetHDR
+
+    model = ControlNetHDR(
+        in_channels=3,
+        out_channels=3,
+        base_channels=64,
+        num_res_blocks=2,
+        learn_residual=True,
+    )
+
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        state = torch.load(checkpoint_path, map_location=device)
+        if 'model_state_dict' in state:
+            model.load_state_dict(state['model_state_dict'])
+        else:
+            model.load_state_dict(state)
+        print(f"  Loaded checkpoint: {checkpoint_path}")
+
+    return model.to(device)
+
+
+def load_controlnet_lite_model(checkpoint_path: Optional[str] = None, device: torch.device = None):
+    """Load ControlNet Lite model."""
+    from src.training.controlnet import ControlNetLite
+
+    model = ControlNetLite(
+        in_channels=3,
+        out_channels=3,
+        base_channels=32,
+        learn_residual=True,
+    )
+
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        state = torch.load(checkpoint_path, map_location=device)
+        if 'model_state_dict' in state:
+            model.load_state_dict(state['model_state_dict'])
+        else:
+            model.load_state_dict(state)
+        print(f"  Loaded checkpoint: {checkpoint_path}")
+
+    return model.to(device)
+
+
 def print_results_table(results: List[Dict]):
     """Print a formatted table of benchmark results."""
     print("\n" + "=" * 80)
@@ -262,7 +307,7 @@ def main():
     parser.add_argument("--fp16", action="store_true",
                         help="Use FP16 precision")
     parser.add_argument("--models", type=str, nargs="+",
-                        default=["unet", "restormer", "hat", "retinexmamba"],
+                        default=["unet", "restormer", "hat", "retinexmamba", "controlnet", "controlnet_lite"],
                         help="Models to benchmark")
 
     args = parser.parse_args()
@@ -301,6 +346,16 @@ def main():
             "loader": load_retinexmamba_model,
             "checkpoint": checkpoint_dir / "retinexmamba_best.pt",
             "name": "RetinexMamba",
+        },
+        "controlnet": {
+            "loader": load_controlnet_model,
+            "checkpoint": checkpoint_dir / "controlnet_best.pt",
+            "name": "ControlNet",
+        },
+        "controlnet_lite": {
+            "loader": load_controlnet_lite_model,
+            "checkpoint": checkpoint_dir / "controlnet_lite_best.pt",
+            "name": "ControlNet-Lite",
         },
     }
 
