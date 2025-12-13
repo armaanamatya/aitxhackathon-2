@@ -100,8 +100,11 @@ class HATTrainer:
         sample_interval: int = 5,
         resume_checkpoint: str = None,
     ):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if not torch.cuda.is_available():
+            raise RuntimeError("GPU not available! This training script requires a CUDA-capable GPU.")
+        self.device = torch.device("cuda")
         print(f"Using device: {self.device}")
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
 
         self.model_size = model_size
         self.image_size = image_size

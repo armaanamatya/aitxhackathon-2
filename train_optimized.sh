@@ -68,7 +68,7 @@ echo "=============================================="
 mkdir -p "$OUTPUT_DIR"
 
 # Run training
-python src/training/train.py \
+python3 src/training/train.py \
     --data_root "$DATA_ROOT" \
     --jsonl_path "$JSONL_PATH" \
     --output_dir "$OUTPUT_DIR" \
