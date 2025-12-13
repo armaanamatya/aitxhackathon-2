@@ -1,0 +1,36 @@
+# Core ML
+torch>=2.1.0
+torchvision>=0.16.0
+accelerate>=0.25.0
+
+# Diffusion models
+diffusers>=0.25.0
+transformers>=4.36.0
+peft>=0.7.0
+
+# Image processing
+Pillow>=10.0.0
+opencv-python>=4.8.0
+kornia>=0.7.0
+
+# Data handling
+numpy>=1.24.0
+pandas>=2.0.0
+
+# NVIDIA TensorRT (for optimization)
+# Install separately: pip install tensorrt torch-tensorrt
+# Or use: pip install nvidia-tensorrt
+
+# Training utilities
+tqdm>=4.65.0
+wandb>=0.16.0
+lpips>=0.1.4
+
+# Metrics
+scikit-image>=0.21.0
+pytorch-msssim>=1.0.0
+
+# API/Demo
+gradio>=4.0.0
+fastapi>=0.104.0
+uvicorn>=0.24.0

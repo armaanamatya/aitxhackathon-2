@@ -1,0 +1,39 @@
+# Output files
+*.out
+*.err
+
+# Model checkpoints
+outputs*/
+checkpoints/
+*.pt
+*.pth
+*.onnx
+
+# Datasets
+images/
+*.jsonl
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+autohdr_venv/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary
+tmp/
+temp/
