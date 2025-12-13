@@ -186,15 +186,29 @@ class ComparisonDataset(Dataset):
         max_samples: Optional[int] = None,
     ):
         self.data_root = Path(data_root)
-        self.samples = []
+        all_samples = []
 
         # Load JSONL
         jsonl_file = self.data_root / jsonl_path
         with open(jsonl_file, 'r') as f:
             for line in f:
                 item = json.loads(line.strip())
-                if item.get('split', 'train') == split:
-                    self.samples.append(item)
+                all_samples.append(item)
+
+        # Check if any sample has split field
+        has_split = any('split' in item for item in all_samples)
+
+        if has_split:
+            # Use existing split field
+            self.samples = [item for item in all_samples if item.get('split', 'train') == split]
+        else:
+            # No split field - use last 10% as validation, rest as train
+            n_total = len(all_samples)
+            n_val = max(1, int(n_total * 0.1))
+            if split == 'val':
+                self.samples = all_samples[-n_val:]
+            else:
+                self.samples = all_samples[:-n_val]
 
         if max_samples:
             self.samples = self.samples[:max_samples]
@@ -208,8 +222,8 @@ class ComparisonDataset(Dataset):
         item = self.samples[idx]
 
         # Load images at original resolution
-        source_path = self.data_root / item['source']
-        target_path = self.data_root / item['target']
+        source_path = self.data_root / item['src']
+        target_path = self.data_root / item['tar']
 
         source = Image.open(source_path).convert('RGB')
         target = Image.open(target_path).convert('RGB')
@@ -223,7 +237,7 @@ class ComparisonDataset(Dataset):
             'target': target_tensor,
             'source_path': str(source_path),
             'target_path': str(target_path),
-            'name': Path(item['source']).stem.replace('_src', ''),
+            'name': Path(item['src']).stem.replace('_src', ''),
         }
 
 
@@ -233,9 +247,9 @@ class ComparisonDataset(Dataset):
 
 def load_restormer(checkpoint_path: str, device: str = 'cuda'):
     """Load Restormer model."""
-    from restormer import restormer_base
+    from restormer import create_restormer
 
-    model = restormer_base()
+    model = create_restormer('base')
     checkpoint = torch.load(checkpoint_path, map_location=device)
 
     # Handle different checkpoint formats
