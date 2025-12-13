@@ -165,8 +165,14 @@ class HATTrainer:
         # Loss functions
         self.criterion_charbonnier = CharbonnierLoss().to(self.device)
         self.criterion_ssim = SSIMLoss().to(self.device)
-        self.criterion_fft = FFTLoss().to(self.device)
         self.criterion_perceptual = VGGPerceptualLoss().to(self.device)
+
+        # FFT loss is problematic with AMP/FP16, only use if explicitly enabled
+        if lambda_fft > 0:
+            self.criterion_fft = FFTLoss().to(self.device)
+            print("Using FFT loss")
+        else:
+            self.criterion_fft = None
 
         if LPIPS_AVAILABLE and lambda_lpips > 0:
             self.criterion_lpips = LPIPSLoss(net='alex').to(self.device)
@@ -231,8 +237,11 @@ class HATTrainer:
 
                 loss_charbonnier = self.criterion_charbonnier(output, target)
                 loss_ssim = self.criterion_ssim(output, target)
-                loss_fft = self.criterion_fft(output, target)
                 loss_perceptual = self.criterion_perceptual(output, target)
+
+                loss_fft = torch.tensor(0.0, device=self.device)
+                if self.criterion_fft is not None:
+                    loss_fft = self.criterion_fft(output, target)
 
                 loss_lpips = torch.tensor(0.0, device=self.device)
                 if self.criterion_lpips is not None:

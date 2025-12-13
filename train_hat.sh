@@ -51,13 +51,13 @@ python3 src/training/train_hat.py \
     --jsonl_path train.jsonl \
     --output_dir outputs_hat \
     --model_size base \
-    --batch_size 8 \
+    --batch_size 4 \
     --num_epochs 200 \
     --image_size 256 \
     --lr 2e-4 \
     --lambda_charbonnier 1.0 \
     --lambda_ssim 0.2 \
-    --lambda_fft 0.05 \
+    --lambda_fft 0.0 \
     --lambda_perceptual 0.1 \
     --lambda_lpips 0.2 \
     --lambda_lab 0.2 \
