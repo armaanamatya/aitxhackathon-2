@@ -8,7 +8,7 @@
 #   - torch.compile enabled for speed
 
 echo "========================================================================"
-echo "RESTORMER DDP - 7MP (3296x2192) - MULTI-GPU TRAINING"
+echo "RESTORMER DDP - 4MP (2448x1632) - MULTI-GPU TRAINING"
 echo "========================================================================"
 echo "Date: $(date)"
 echo "Node: $(hostname)"
@@ -21,8 +21,8 @@ nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
 echo ""
 
 echo "CONFIG:"
-echo "  - Resolution: 3296 x 2192 (~7MP, divisible by 16)"
-echo "  - Total batch size: 2 (1 per GPU)"
+echo "  - Resolution: 2448 x 1632 (~4MP, divisible by 16)"
+echo "  - Total batch size: 4 (2 per GPU)"
 echo "  - torch.compile: ENABLED (H100/H200 only)"
 echo "  - DDP backend: NCCL"
 echo "  - Data workers: 4 per process"
@@ -53,9 +53,9 @@ echo "========================================================================"
 torchrun --nproc_per_node=$NUM_GPUS train_restormer_ddp.py \
     --train_jsonl data_splits/proper_split/train.jsonl \
     --val_jsonl data_splits/proper_split/val.jsonl \
-    --output_dir outputs_restormer_ddp_7mp \
-    --resolution 3296 \
-    --batch_size 2 \
+    --output_dir outputs_restormer_ddp_4mp \
+    --resolution 2448 \
+    --batch_size 4 \
     --lr 2e-4 \
     --warmup_epochs 5 \
     --patience 15 \
@@ -70,4 +70,4 @@ echo "Date: $(date)"
 echo "========================================================================"
 echo ""
 echo "Next step: Finetune encoder"
-echo "python3 finetune_encoder.py --checkpoint outputs_restormer_ddp_7mp/checkpoint_best.pt --resolution 3296 --batch_size 2 --epochs 50"
+echo "python3 finetune_encoder.py --checkpoint outputs_restormer_ddp_4mp/checkpoint_best.pt --resolution 2448 --batch_size 4 --epochs 50"
