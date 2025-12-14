@@ -221,12 +221,18 @@ class CombinedLoss(nn.Module):
 # Training
 # =============================================================================
 
-def train_epoch(model, dataloader, criterion, optimizer, scaler, device, grad_clip=1.0):
+def train_epoch(model, dataloader, criterion, optimizer, scaler, device, grad_clip=1.0, epoch=0, total_epochs=100):
     model.train()
     total_loss = 0
     loss_components = {'l1': 0, 'window': 0, 'saturation': 0}
+    n_batches = len(dataloader)
 
-    for batch_idx, (inputs, targets) in enumerate(dataloader):
+    from tqdm import tqdm
+    pbar = tqdm(enumerate(dataloader), total=n_batches,
+                desc=f"Epoch {epoch+1}/{total_epochs}",
+                ncols=100, leave=True)
+
+    for batch_idx, (inputs, targets) in pbar:
         inputs = inputs.to(device)
         targets = targets.to(device)
 
@@ -248,7 +254,12 @@ def train_epoch(model, dataloader, criterion, optimizer, scaler, device, grad_cl
             if k != 'total':
                 loss_components[k] += v
 
-    n_batches = len(dataloader)
+        # Update progress bar
+        pbar.set_postfix({
+            'loss': f"{loss.item():.4f}",
+            'L1': f"{components['l1']:.4f}"
+        })
+
     return total_loss / n_batches, {k: v / n_batches for k, v in loss_components.items()}
 
 
@@ -377,6 +388,9 @@ def main():
     print("=" * 80)
     print("TRAINING")
     print("=" * 80)
+    print(f"Starting training at {datetime.now().strftime('%H:%M:%S')}")
+    print(f"Total epochs: {args.epochs}, Batches per epoch: {len(train_loader)}")
+    print("-" * 80)
 
     best_val_loss = float('inf')
     best_val_l1 = float('inf')
@@ -388,7 +402,8 @@ def main():
 
         # Train
         train_loss, train_components = train_epoch(
-            model, train_loader, criterion, optimizer, scaler, device, args.grad_clip
+            model, train_loader, criterion, optimizer, scaler, device, args.grad_clip,
+            epoch=epoch, total_epochs=args.epochs
         )
 
         # Validate
