@@ -22,8 +22,8 @@ echo ""
 
 echo "CONFIG:"
 echo "  - Resolution: 2448 x 1632 (~4MP, divisible by 16)"
-echo "  - Total batch size: 4 (2 per GPU)"
-echo "  - torch.compile: DISABLED (saves memory)"
+echo "  - Total batch size: 2 (1 per GPU)"
+echo "  - Gradient checkpointing: ENABLED"
 echo "  - DDP backend: NCCL"
 echo "  - Data workers: 4 per process"
 echo ""
@@ -55,11 +55,12 @@ torchrun --nproc_per_node=$NUM_GPUS train_restormer_ddp.py \
     --val_jsonl data_splits/proper_split/val.jsonl \
     --output_dir outputs_restormer_ddp_4mp \
     --resolution 2448 \
-    --batch_size 4 \
+    --batch_size 2 \
     --lr 2e-4 \
     --warmup_epochs 5 \
     --patience 15 \
     --epochs 100 \
+    --use_checkpointing \
     --num_workers 4
 
 echo ""
@@ -69,4 +70,4 @@ echo "Date: $(date)"
 echo "========================================================================"
 echo ""
 echo "Next step: Finetune encoder"
-echo "python3 finetune_encoder.py --checkpoint outputs_restormer_ddp_4mp/checkpoint_best.pt --resolution 2448 --batch_size 4 --epochs 50"
+echo "python3 finetune_encoder.py --checkpoint outputs_restormer_ddp_4mp/checkpoint_best.pt --resolution 2448 --batch_size 2 --epochs 50 --use_checkpointing"
