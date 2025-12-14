@@ -1,0 +1,27 @@
+{
+  "description": "Proper train/val/test split with held-out test set",
+  "split_strategy": {
+    "test": "First 10 images from original train.jsonl (held out)",
+    "train_val": "90:10 split of remaining 567 images",
+    "seed": 42
+  },
+  "counts": {
+    "test": 10,
+    "train": 511,
+    "val": 56,
+    "total": 577
+  },
+  "test_images": [
+    "images/1_src.jpg",
+    "images/3_src.jpg",
+    "images/6_src.jpg",
+    "images/7_src.jpg",
+    "images/13_src.jpg",
+    "images/18_src.jpg",
+    "images/23_src.jpg",
+    "images/25_src.jpg",
+    "images/27_src.jpg",
+    "images/28_src.jpg"
+  ],
+  "no_data_leakage": true
+}
