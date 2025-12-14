@@ -296,6 +296,8 @@ def main():
     parser.add_argument('--grad_clip', type=float, default=1.0)
     parser.add_argument('--patience', type=int, default=15)
     parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--use_checkpointing', action='store_true',
+                        help='Enable gradient checkpointing to reduce memory')
 
     args = parser.parse_args()
 
@@ -329,9 +331,22 @@ def main():
 
     # Model
     print("Creating Restormer model...")
-    model = create_restormer(args.model_size).to(device)
+    from training.restormer import Restormer
+
+    # Model configs
+    configs = {
+        "tiny": {"dim": 24, "num_blocks": [2, 3, 3, 4], "num_refinement_blocks": 2, "heads": [1, 2, 4, 8]},
+        "small": {"dim": 32, "num_blocks": [3, 4, 4, 6], "num_refinement_blocks": 3, "heads": [1, 2, 4, 8]},
+        "base": {"dim": 48, "num_blocks": [4, 6, 6, 8], "num_refinement_blocks": 4, "heads": [1, 2, 4, 8]},
+        "large": {"dim": 64, "num_blocks": [6, 8, 8, 12], "num_refinement_blocks": 6, "heads": [1, 2, 4, 8]},
+    }
+    config = configs[args.model_size]
+    model = Restormer(**config, use_checkpointing=args.use_checkpointing).to(device)
+
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Parameters: {n_params:,}")
+    if args.use_checkpointing:
+        print("Gradient checkpointing: ENABLED (lower memory, slower training)")
     print()
 
     # Loss
