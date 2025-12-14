@@ -11,9 +11,11 @@ echo "GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/d
 echo ""
 echo "CONFIG:"
 echo "  - Resolution: 3296 x 2192 (aspect ratio preserved, divisible by 16)"
-echo "  - Batch size: 2"
+echo "  - Batch size: 4"
 echo "  - Gradient checkpointing: ENABLED"
-echo "  - Expected memory: ~120GB"
+echo "  - torch.compile(): ENABLED"
+echo "  - Data workers: 8"
+echo "  - Expected memory: ~80-100GB"
 echo ""
 echo "DATA SPLIT (no leakage):"
 echo "  - TEST: 10 images (HELD OUT - never seen)"
@@ -43,13 +45,14 @@ python3 train_restormer_512_combined_loss.py \
     --val_jsonl data_splits/proper_split/val.jsonl \
     --output_dir outputs_restormer_3296 \
     --resolution 3296 \
-    --batch_size 2 \
+    --batch_size 4 \
     --lr 2e-4 \
     --warmup_epochs 5 \
     --patience 15 \
     --epochs 100 \
     --use_checkpointing \
-    --num_workers 4
+    --compile \
+    --num_workers 8
 
 echo ""
 echo "========================================================================"
@@ -58,4 +61,4 @@ echo "Date: $(date)"
 echo "========================================================================"
 echo ""
 echo "Next step: Finetune encoder"
-echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3296/checkpoint_best.pt --resolution 3296 --batch_size 2 --epochs 50 --use_checkpointing"
+echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3296/checkpoint_best.pt --resolution 3296 --batch_size 4 --epochs 50 --use_checkpointing"

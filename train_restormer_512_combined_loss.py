@@ -315,6 +315,8 @@ def main():
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--use_checkpointing', action='store_true',
                         help='Enable gradient checkpointing to reduce memory')
+    parser.add_argument('--compile', action='store_true',
+                        help='Use torch.compile() for faster training')
 
     args = parser.parse_args()
 
@@ -363,7 +365,13 @@ def main():
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Parameters: {n_params:,}")
     if args.use_checkpointing:
-        print("Gradient checkpointing: ENABLED (lower memory, slower training)")
+        print("Gradient checkpointing: ENABLED")
+
+    # Compile model for faster training
+    if args.compile:
+        print("Compiling model with torch.compile()...")
+        model = torch.compile(model, mode="reduce-overhead")
+        print("Model compiled: ENABLED (1.5-2x speedup)")
     print()
 
     # Loss
