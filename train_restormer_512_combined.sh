@@ -13,7 +13,6 @@ echo "CONFIG:"
 echo "  - Resolution: 3296 x 2192 (aspect ratio preserved, divisible by 16)"
 echo "  - Batch size: 4"
 echo "  - Gradient checkpointing: ENABLED"
-echo "  - torch.compile(): ENABLED"
 echo "  - Data workers: 8"
 echo "  - Expected memory: ~80-100GB"
 echo ""
@@ -51,7 +50,6 @@ python3 train_restormer_512_combined_loss.py \
     --patience 15 \
     --epochs 100 \
     --use_checkpointing \
-    --compile \
     --num_workers 8
 
 echo ""
