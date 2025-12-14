@@ -1,0 +1,31 @@
+# FastAPI Inference Server Requirements
+# Compatible with CUDA 13.0 and Python 3.10
+
+# Core FastAPI dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Image processing
+Pillow==10.1.0
+numpy==1.24.3
+
+# PyTorch (compatible with CUDA 13.0)
+# Note: Install PyTorch separately based on your CUDA version
+# For CUDA 13.0, you may need to build from source or use nightly builds
+# torch>=2.0.0
+# torchvision>=0.15.0
+
+# Triton Inference Server client
+tritonclient[http]==2.41.0
+
+# Logging and utilities
+python-json-logger==2.0.7
+
+# Optional: For development
+# pytest==7.4.3
+# pytest-asyncio==0.21.1
+# httpx==0.25.2
+
