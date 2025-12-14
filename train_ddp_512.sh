@@ -1,20 +1,31 @@
 #!/bin/bash
-# Train Restormer at 3296x2192 resolution on Brev B300
-# Usage: ./train_restormer_512_combined.sh
+# DDP Multi-GPU Training for Restormer at 7MP (3296x2192)
+# Usage: ./train_ddp_512.sh
+#
+# For 2x H200 (282GB total):
+#   - 7MP (3296x2192) without checkpointing
+#   - batch_size=4 (2 per GPU)
+#   - torch.compile enabled for speed
 
 echo "========================================================================"
-echo "RESTORMER 3008x2000 (6MP) - COMBINED LOSS (L1 + Window + Color)"
+echo "RESTORMER DDP - 7MP (3296x2192) - MULTI-GPU TRAINING"
 echo "========================================================================"
 echo "Date: $(date)"
 echo "Node: $(hostname)"
-echo "GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo 'N/A')"
 echo ""
+
+# Detect number of GPUs
+NUM_GPUS=$(nvidia-smi -L | wc -l)
+echo "GPUs detected: $NUM_GPUS"
+nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader
+echo ""
+
 echo "CONFIG:"
-echo "  - Resolution: 3008 x 2000 (~6MP, divisible by 16)"
-echo "  - Batch size: 4"
+echo "  - Resolution: 3296 x 2192 (~7MP, divisible by 16)"
+echo "  - Total batch size: 2 (1 per GPU)"
 echo "  - Gradient checkpointing: ENABLED"
-echo "  - Data workers: 8"
-echo "  - Expected memory: ~60-80GB"
+echo "  - DDP backend: NCCL"
+echo "  - Data workers: 4 per process"
 echo ""
 echo "DATA SPLIT (no leakage):"
 echo "  - TEST: 10 images (HELD OUT - never seen)"
@@ -35,28 +46,28 @@ echo "Data splits verified:"
 wc -l data_splits/proper_split/*.jsonl
 echo ""
 echo "========================================================================"
-echo "Starting training..."
+echo "Starting DDP training with $NUM_GPUS GPUs..."
 echo "========================================================================"
 
-# Train Restormer 3008x2000 (~6MP) with combined loss
-python3 train_restormer_512_combined_loss.py \
+# Launch with torchrun for DDP
+torchrun --nproc_per_node=$NUM_GPUS train_restormer_ddp.py \
     --train_jsonl data_splits/proper_split/train.jsonl \
     --val_jsonl data_splits/proper_split/val.jsonl \
-    --output_dir outputs_restormer_3008 \
-    --resolution 3008 \
-    --batch_size 4 \
+    --output_dir outputs_restormer_ddp_7mp \
+    --resolution 3296 \
+    --batch_size 2 \
     --lr 2e-4 \
     --warmup_epochs 5 \
     --patience 15 \
     --epochs 100 \
     --use_checkpointing \
-    --num_workers 8
+    --num_workers 4
 
 echo ""
 echo "========================================================================"
-echo "Training complete!"
+echo "DDP Training complete!"
 echo "Date: $(date)"
 echo "========================================================================"
 echo ""
 echo "Next step: Finetune encoder"
-echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3008/checkpoint_best.pt --resolution 3008 --batch_size 4 --epochs 50 --use_checkpointing"
+echo "python3 finetune_encoder.py --checkpoint outputs_restormer_ddp_7mp/checkpoint_best.pt --resolution 3296 --batch_size 2 --epochs 50 --use_checkpointing"
