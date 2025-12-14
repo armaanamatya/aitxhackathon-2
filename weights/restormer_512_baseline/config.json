@@ -1,0 +1,66 @@
+{
+  "model_name": "Restormer Baseline - Real Estate HDR",
+  "model_type": "restormer",
+  "model_variant": "base",
+
+  "training": {
+    "resolution": 512,
+    "batch_size": 4,
+    "learning_rate": 0.0002,
+    "optimizer": "AdamW",
+    "weight_decay": 0.0001,
+    "scheduler": "CosineAnnealingLR",
+    "epochs_trained": 38,
+    "mixed_precision": true,
+
+    "data_split": {
+      "train_samples": 511,
+      "val_samples": 56,
+      "test_samples": 10,
+      "split_type": "proper_split",
+      "test_excluded": true
+    }
+  },
+
+  "loss_function": {
+    "type": "combined",
+    "components": {
+      "l1_loss": {
+        "weight": 1.0,
+        "description": "Base pixel-wise L1 loss"
+      },
+      "window_aware_loss": {
+        "weight": 0.3,
+        "brightness_threshold": 0.7,
+        "window_weight": 2.0,
+        "description": "Extra weight for bright regions (windows, sky)"
+      },
+      "saturation_loss": {
+        "weight": 0.2,
+        "description": "Saturation preservation in bright regions"
+      }
+    }
+  },
+
+  "performance": {
+    "validation": {
+      "l1": 0.0530,
+      "note": "Best checkpoint at epoch 38"
+    },
+    "test": {
+      "l1": 0.0515,
+      "psnr": 23.57,
+      "ssim": 0.9273,
+      "note": "Evaluated on 10 held-out test images"
+    }
+  },
+
+  "input_output": {
+    "input_channels": 3,
+    "output_channels": 3,
+    "input_range": [0, 1],
+    "output_range": [0, 1],
+    "normalization": "none",
+    "preprocessing": "resize_to_512x512"
+  }
+}

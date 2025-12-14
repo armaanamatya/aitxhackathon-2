@@ -1,0 +1,55 @@
+{
+  "architecture": "Restormer",
+  "paper": "Restormer: Efficient Transformer for High-Resolution Image Restoration (CVPR 2022)",
+  "variant": "base",
+
+  "parameters": {
+    "total": 25423939,
+    "trainable": 25423939,
+    "size_mb": 96.97
+  },
+
+  "model_structure": {
+    "type": "encoder_decoder_transformer",
+    "encoder_decoder": {
+      "num_blocks": [4, 6, 6, 8],
+      "num_heads": [1, 2, 4, 8],
+      "channels": [48, 96, 192, 384],
+      "num_refinement_blocks": 4,
+      "expansion_factor": 2.66,
+      "bias": false,
+      "LayerNorm_type": "WithBias"
+    },
+
+    "attention": {
+      "type": "multi-dconv_head_transposed_attention",
+      "description": "Efficient multi-head self-attention with depth-wise convolutions"
+    },
+
+    "feed_forward": {
+      "type": "gated_dconv_feed_forward",
+      "description": "Gated depth-wise convolutional feed-forward network"
+    }
+  },
+
+  "input_output_specs": {
+    "input_shape": [3, 512, 512],
+    "output_shape": [3, 512, 512],
+    "input_dtype": "float32",
+    "output_dtype": "float32",
+    "input_range": [0.0, 1.0],
+    "output_range": [0.0, 1.0],
+    "requires_clamping": true,
+    "clamp_range": [0.0, 1.0]
+  },
+
+  "implementation_details": {
+    "framework": "PyTorch",
+    "pytorch_version": "2.6+",
+    "cuda_required": false,
+    "cuda_recommended": true,
+    "inference_precision": ["fp32", "fp16"],
+    "supports_torchscript": false,
+    "supports_onnx": false
+  }
+}

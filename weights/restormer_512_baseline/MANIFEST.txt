@@ -1,0 +1,165 @@
+RESTORMER 512 BASELINE - MODEL PACKAGE MANIFEST
+===============================================
+
+Package Date: 2025-12-14
+Model: Restormer Base (25.4M parameters)
+Task: Real Estate HDR Enhancement
+Resolution: 512x512
+Performance: L1=0.0515, PSNR=23.57, SSIM=0.9273
+
+FILES INCLUDED:
+--------------
+
+1. model_checkpoint.pt (292 MB)
+   - Complete PyTorch checkpoint
+   - Contains: model weights, optimizer state, scheduler state, training metrics
+   - Epoch: 38 (best validation checkpoint)
+   - Val L1: 0.0530
+
+2. config.json (1.5 KB)
+   - Training configuration
+   - Hyperparameters (learning rate, batch size, optimizer, etc.)
+   - Loss function specification
+   - Data split information
+   - Performance metrics
+
+3. architecture.json (1.5 KB)
+   - Model architecture specification
+   - Layer details (encoder/decoder blocks, attention heads, channels)
+   - Parameter counts
+   - Input/output specifications
+   - Implementation details
+
+4. training_info.json (110 bytes)
+   - Training metrics at best checkpoint
+   - Epoch number, validation loss, PSNR, SSIM
+
+5. load_model.py (5.3 KB)
+   - Standalone Python script for model loading
+   - Supports single image and batch directory inference
+   - Usage examples included
+   - Executable script
+
+6. README.md (6.7 KB)
+   - Complete documentation
+   - Quick start guide
+   - Inference examples (single image, batch processing)
+   - Architecture overview
+   - Training configuration details
+   - Performance metrics
+   - System requirements
+   - Known limitations
+   - Citation information
+
+7. INFERENCE_OPTIMIZATION_NVIDIA.md (28 KB)
+   - SOTA inference optimization guide for NVIDIA DGX systems
+   - TensorRT optimization (3-5x speedup)
+   - Mixed precision inference (FP16, INT8)
+   - torch.compile() optimization
+   - Batching strategies
+   - CUDA Graphs
+   - Multi-GPU inference
+   - NVIDIA Triton Inference Server deployment
+   - Performance comparison matrix
+   - DGX-specific optimizations (A100, H100, H200)
+   - Profiling and monitoring
+   - Top 0.0001% PhD-level ML engineer analysis
+
+8. MANIFEST.txt (this file)
+   - Package contents listing
+   - File descriptions
+
+TOTAL SIZE: ~292 MB
+
+USAGE INSTRUCTIONS:
+------------------
+
+For single image inference:
+    python load_model.py --input image.jpg --output output_hdr.jpg
+
+For batch inference:
+    python load_model.py --input_dir ./images/ --output_dir ./results/
+
+For detailed documentation, see README.md
+
+SYSTEM REQUIREMENTS:
+-------------------
+
+Minimum:
+- Python 3.9+
+- PyTorch 2.0+
+- 4GB GPU VRAM (for inference)
+- 8GB RAM
+
+Recommended:
+- Python 3.9+
+- PyTorch 2.6+
+- CUDA 12.1+
+- 8GB+ GPU VRAM
+- 16GB+ RAM
+
+DEPENDENCIES:
+------------
+
+pip install torch torchvision pillow numpy
+
+MODEL PERFORMANCE:
+-----------------
+
+Test Set (10 held-out images):
+- L1:   0.0515 ± 0.0137
+- PSNR: 23.57 ± 2.35 dB
+- SSIM: 0.9273 ± 0.0225
+
+Validation:
+- L1:   0.0530 (best checkpoint)
+
+TRAINING DETAILS:
+----------------
+
+Loss Components:
+- L1 Loss (weight: 1.0)
+- Window-Aware Loss (weight: 0.3) - Emphasizes bright regions
+- Saturation Loss (weight: 0.2) - Preserves color in bright areas
+
+Data Split:
+- Train: 511 images (with augmentation)
+- Validation: 56 images
+- Test: 10 images (held out, excluded from training)
+
+Training Job: 609756
+Training Date: December 2025
+
+NOTES FOR INFERENCE TEAM:
+-------------------------
+
+1. Model expects RGB images in range [0, 1]
+2. Input should be resized to 512x512
+3. Output should be clamped to [0, 1]
+4. Model runs in eval mode for inference
+5. Use torch.no_grad() for memory efficiency
+6. See load_model.py for complete inference pipeline
+
+KNOWN LIMITATIONS:
+-----------------
+
+1. Color saturation in green/blue regions may be underestimated
+   (plants, sky) - varies per image due to GT editing variance
+
+2. Model is trained at 512x512 - for higher resolutions, consider
+   tiling/patching approaches
+
+3. Post-processing with fixed rules is NOT recommended due to
+   per-image variance in ground truth editing style
+
+For improvement recommendations, see README.md section
+"Recommended Improvements"
+
+CONTACT:
+-------
+
+For questions or issues with inference:
+- Contact ML engineering team
+- Refer to README.md for detailed documentation
+
+================================================================================
