@@ -36,7 +36,7 @@ python3 train_restormer_512_combined_loss.py \
     --val_jsonl data_splits/proper_split/val.jsonl \
     --output_dir outputs_restormer_3296 \
     --resolution 3296 \
-    --batch_size 2 \
+    --batch_size 1 \
     --lr 2e-4 \
     --warmup_epochs 5 \
     --patience 15 \
@@ -50,4 +50,4 @@ echo "Date: $(date)"
 echo "========================================================================"
 echo ""
 echo "Next step: Finetune encoder"
-echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3296/checkpoint_best.pt --resolution 3296 --batch_size 2 --epochs 50"
+echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3296/checkpoint_best.pt --resolution 3296 --batch_size 1 --epochs 50"
