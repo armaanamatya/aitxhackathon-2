@@ -1,0 +1,65 @@
+Loading training samples...
+Found 577 training pairs
+
+Analyzing transformations...
+
+Successfully analyzed 50 image pairs
+
+============================================================
+DATASET TRANSFORMATION ANALYSIS
+============================================================
+
+📊 BRIGHTNESS:
+  Average delta: +0.2686 (+26.9%)
+  Average ratio: 1.7526x
+  Std dev delta: 0.0523
+
+📈 CONTRAST:
+  Average delta: +0.0247 (+2.5%)
+  Average ratio: 1.1887x
+  Std dev delta: 0.0236
+
+🎨 SATURATION:
+  Average delta: -0.1299 (-13.0%)
+  Average ratio: 0.5693x
+  Std dev delta: 0.1042
+
+🌡️  COLOR TEMPERATURE (Blue/Red):
+  Average delta: +0.0873
+  Std dev: 0.1304
+
+⚡ GAMMA CURVE:
+  Average estimated gamma: 0.418
+  Std dev: 0.081
+  Range: [0.280, 0.632]
+
+🌓 SHADOWS/HIGHLIGHTS:
+  Shadow lift (avg): +0.1822 (+18.2%)
+  Highlight adjust (avg): -0.0203 (-2.0%)
+
+🔴🟢🔵 PER-CHANNEL CHANGES:
+  R delta (avg): +0.2656 (+26.6%)
+  G delta (avg): +0.2690 (+26.9%)
+  B delta (avg): +0.2746 (+27.5%)
+
+============================================================
+RECOMMENDED PRE/POST PROCESSING
+============================================================
+
+✅ HIGH PRIORITY (Consistent patterns):
+  • Brightness adjustment: 1.753x (Post-process)
+  • Contrast enhancement: 1.189x (Post-process)
+  • Saturation boost: 0.569x (-43.1%) (Post-process)
+  • Gamma correction: γ=0.418 (Pre-process)
+  • Shadow lift: +0.182 (+18.2%) (Post-process)
+
+⚠️  MEDIUM PRIORITY (Variable patterns):
+  • Adaptive brightness (std: 0.052)
+  • Adaptive white balance (std: 0.130)
+
+💾 Detailed results saved to: dataset_analysis.json
+
+📊 Creating visualizations...
+📊 Visualization saved to: dataset_analysis.png
+
+✅ Analysis complete!

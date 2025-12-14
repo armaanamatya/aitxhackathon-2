@@ -278,7 +278,7 @@ def main():
     # Load backbone
     print("Loading frozen backbone...")
     backbone = create_restormer('base').to(device)
-    checkpoint = torch.load(args.backbone_path, map_location='cpu')
+    checkpoint = torch.load(args.backbone_path, map_location='cpu', weights_only=False)
 
     if 'model_state_dict' in checkpoint:
         state_dict = checkpoint['model_state_dict']
