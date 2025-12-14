@@ -1,0 +1,45 @@
+{
+  "model": "outputs_restormer_896_v2/checkpoint_best.pt",
+  "resolution": 896,
+  "preprocessing": false,
+  "postprocessing": false,
+  "num_samples": 5,
+  "avg_l1_loss": 0.05142977461218834,
+  "results": [
+    {
+      "image_num": "1",
+      "src": "images/1_src.jpg",
+      "tar": "images/1_tar.jpg",
+      "output": "test/restormer_896_baseline/1_output.jpg",
+      "l1_loss": 0.04163029417395592
+    },
+    {
+      "image_num": "3",
+      "src": "images/3_src.jpg",
+      "tar": "images/3_tar.jpg",
+      "output": "test/restormer_896_baseline/3_output.jpg",
+      "l1_loss": 0.07163607329130173
+    },
+    {
+      "image_num": "6",
+      "src": "images/6_src.jpg",
+      "tar": "images/6_tar.jpg",
+      "output": "test/restormer_896_baseline/6_output.jpg",
+      "l1_loss": 0.04044198617339134
+    },
+    {
+      "image_num": "7",
+      "src": "images/7_src.jpg",
+      "tar": "images/7_tar.jpg",
+      "output": "test/restormer_896_baseline/7_output.jpg",
+      "l1_loss": 0.061526402831077576
+    },
+    {
+      "image_num": "13",
+      "src": "images/13_src.jpg",
+      "tar": "images/13_tar.jpg",
+      "output": "test/restormer_896_baseline/13_output.jpg",
+      "l1_loss": 0.041914116591215134
+    }
+  ]
+}

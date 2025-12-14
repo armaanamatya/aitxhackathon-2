@@ -15,6 +15,7 @@ Adapted for real estate HDR enhancement / color grading.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as gradient_checkpoint
 from typing import List, Optional
 import math
 
@@ -133,6 +134,26 @@ class TransformerBlock(nn.Module):
         return x
 
 
+class TransformerStage(nn.Module):
+    """
+    Stack of transformer blocks with optional gradient checkpointing.
+    Reduces activation memory at the cost of extra compute when enabled.
+    """
+
+    def __init__(self, blocks: List[TransformerBlock], use_checkpoint: bool = False):
+        super().__init__()
+        self.blocks = nn.ModuleList(blocks)
+        self.use_checkpoint = use_checkpoint
+
+    def forward(self, x):
+        for block in self.blocks:
+            if self.use_checkpoint and self.training:
+                x = gradient_checkpoint(block, x, use_reentrant=False)
+            else:
+                x = block(x)
+        return x
+
+
 class Downsample(nn.Module):
     """Pixel unshuffle downsampling."""
 
@@ -178,6 +199,7 @@ class Restormer(nn.Module):
         heads: List[int] = [1, 2, 4, 8],
         ffn_expansion_factor: float = 2.66,
         bias: bool = False,
+        use_checkpointing: bool = False,
     ):
         """
         Args:
@@ -195,56 +217,64 @@ class Restormer(nn.Module):
         self.patch_embed = nn.Conv2d(in_channels, dim, kernel_size=3, padding=1, bias=bias)
 
         # Encoder
-        self.encoder_level1 = nn.Sequential(
-            *[TransformerBlock(dim, heads[0], ffn_expansion_factor, bias)
-              for _ in range(num_blocks[0])]
+        self.encoder_level1 = TransformerStage(
+            [TransformerBlock(dim, heads[0], ffn_expansion_factor, bias)
+             for _ in range(num_blocks[0])],
+            use_checkpoint=use_checkpointing
         )
         self.down1_2 = Downsample(dim)
 
-        self.encoder_level2 = nn.Sequential(
-            *[TransformerBlock(dim * 2, heads[1], ffn_expansion_factor, bias)
-              for _ in range(num_blocks[1])]
+        self.encoder_level2 = TransformerStage(
+            [TransformerBlock(dim * 2, heads[1], ffn_expansion_factor, bias)
+             for _ in range(num_blocks[1])],
+            use_checkpoint=use_checkpointing
         )
         self.down2_3 = Downsample(dim * 2)
 
-        self.encoder_level3 = nn.Sequential(
-            *[TransformerBlock(dim * 4, heads[2], ffn_expansion_factor, bias)
-              for _ in range(num_blocks[2])]
+        self.encoder_level3 = TransformerStage(
+            [TransformerBlock(dim * 4, heads[2], ffn_expansion_factor, bias)
+             for _ in range(num_blocks[2])],
+            use_checkpoint=use_checkpointing
         )
         self.down3_4 = Downsample(dim * 4)
 
         # Bottleneck
-        self.latent = nn.Sequential(
-            *[TransformerBlock(dim * 8, heads[3], ffn_expansion_factor, bias)
-              for _ in range(num_blocks[3])]
+        self.latent = TransformerStage(
+            [TransformerBlock(dim * 8, heads[3], ffn_expansion_factor, bias)
+             for _ in range(num_blocks[3])],
+            use_checkpoint=use_checkpointing
         )
 
         # Decoder
         self.up4_3 = Upsample(dim * 8)
         self.reduce_chan_level3 = nn.Conv2d(dim * 8, dim * 4, kernel_size=1, bias=bias)
-        self.decoder_level3 = nn.Sequential(
-            *[TransformerBlock(dim * 4, heads[2], ffn_expansion_factor, bias)
-              for _ in range(num_blocks[2])]
+        self.decoder_level3 = TransformerStage(
+            [TransformerBlock(dim * 4, heads[2], ffn_expansion_factor, bias)
+             for _ in range(num_blocks[2])],
+            use_checkpoint=use_checkpointing
         )
 
         self.up3_2 = Upsample(dim * 4)
         self.reduce_chan_level2 = nn.Conv2d(dim * 4, dim * 2, kernel_size=1, bias=bias)
-        self.decoder_level2 = nn.Sequential(
-            *[TransformerBlock(dim * 2, heads[1], ffn_expansion_factor, bias)
-              for _ in range(num_blocks[1])]
+        self.decoder_level2 = TransformerStage(
+            [TransformerBlock(dim * 2, heads[1], ffn_expansion_factor, bias)
+             for _ in range(num_blocks[1])],
+            use_checkpoint=use_checkpointing
         )
 
         self.up2_1 = Upsample(dim * 2)
         self.reduce_chan_level1 = nn.Conv2d(dim * 2, dim, kernel_size=1, bias=bias)
-        self.decoder_level1 = nn.Sequential(
-            *[TransformerBlock(dim, heads[0], ffn_expansion_factor, bias)
-              for _ in range(num_blocks[0])]
+        self.decoder_level1 = TransformerStage(
+            [TransformerBlock(dim, heads[0], ffn_expansion_factor, bias)
+             for _ in range(num_blocks[0])],
+            use_checkpoint=use_checkpointing
         )
 
         # Refinement
-        self.refinement = nn.Sequential(
-            *[TransformerBlock(dim, heads[0], ffn_expansion_factor, bias)
-              for _ in range(num_refinement_blocks)]
+        self.refinement = TransformerStage(
+            [TransformerBlock(dim, heads[0], ffn_expansion_factor, bias)
+             for _ in range(num_refinement_blocks)],
+            use_checkpoint=use_checkpointing
         )
 
         # Output
