@@ -1,0 +1,11 @@
+# Streamlit Inference Interface Requirements
+
+streamlit>=1.28.0
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# Optional: For model inference
+# Install these if you want to use the model directly
+# torch>=2.0.0
+# fastapi>=0.104.0
+

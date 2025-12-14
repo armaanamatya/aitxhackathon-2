@@ -19,7 +19,15 @@ from PIL import Image
 # Add src to path
 sys.path.append(str(Path(__file__).parent))
 
-from src.inference.infer import HDREnhancer
+# Try to import HDREnhancer, but handle errors gracefully
+try:
+    from src.inference.infer import HDREnhancer
+    ENHANCER_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Could not import HDREnhancer: {e}")
+    print("Demo will run in mock mode (images will pass through unchanged)")
+    ENHANCER_AVAILABLE = False
+    HDREnhancer = None
 
 
 # Global enhancer instance
@@ -29,6 +37,9 @@ enhancer = None
 def load_model(model_path: str, image_size: int = 512, precision: str = "fp16"):
     """Load or reload the model."""
     global enhancer
+
+    if not ENHANCER_AVAILABLE:
+        return "Error: HDREnhancer not available. PyTorch may not be properly installed."
 
     if not os.path.exists(model_path):
         return f"Error: Model not found at {model_path}"
@@ -55,6 +66,12 @@ def enhance_image(
         Tuple of (enhanced_image, processing_info)
     """
     global enhancer
+
+    if not ENHANCER_AVAILABLE:
+        # Mock mode - return original image
+        if input_image is None:
+            return None, "Error: No input image provided."
+        return input_image, "Mock mode: Image passed through unchanged (PyTorch not available)"
 
     if enhancer is None:
         return None, "Error: Model not loaded. Please load a model first."
@@ -232,15 +249,49 @@ def build_demo():
 
 
 if __name__ == "__main__":
-    # Try to load default model
-    default_model = "checkpoints/best_generator.pt"
-    if os.path.exists(default_model):
-        load_model(default_model)
+    # Try to load default model (only if enhancer is available)
+    if ENHANCER_AVAILABLE:
+        default_model = "checkpoints/best_generator.pt"
+        if os.path.exists(default_model):
+            try:
+                load_model(default_model)
+            except Exception as e:
+                print(f"Warning: Could not load default model: {e}")
+    else:
+        print("\n" + "="*60)
+        print("WARNING: Running in MOCK MODE")
+        print("="*60)
+        print("PyTorch is not available or has CUDA issues.")
+        print("The demo will run but images will pass through unchanged.")
+        print("To fix: Install PyTorch properly or use CPU mode.")
+        print("="*60 + "\n")
 
     # Build and launch demo
     demo = build_demo()
+    
+    # Try to find an available port
+    import socket
+    def find_free_port(start_port=7860, max_attempts=10):
+        for i in range(max_attempts):
+            port = start_port + i
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(('localhost', port)) != 0:
+                    return port
+        return None
+    
+    # Find available port
+    port = find_free_port(7860)
+    if port is None:
+        port = 7860  # Fallback, Gradio will handle error
+    
+    print(f"\n{'='*60}")
+    print(f"Starting Gradio demo on port {port}")
+    print(f"{'='*60}\n")
+    
     demo.launch(
         server_name="0.0.0.0",
-        server_port=7860,
-        share=False,
+        server_port=port,
+        share=True,  # Creates public link via Gradio
+        show_error=True,  # Show errors in UI
+        quiet=False,  # Show all output
     )
