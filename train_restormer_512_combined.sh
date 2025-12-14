@@ -16,7 +16,7 @@ echo "  - TRAIN: 511 images (90%)"
 echo "  - VAL: 56 images (10%)"
 echo ""
 echo "LOSS: L1(1.0) + Window(0.5) + BrightRegionSaturation(0.3)"
-echo "GRADIENT CHECKPOINTING: ENABLED"
+echo "RESOLUTION: 3296 x 2192 (aspect ratio preserved)"
 echo ""
 
 # Verify data splits exist
@@ -30,18 +30,17 @@ echo "Data splits verified:"
 wc -l data_splits/proper_split/*.jsonl
 echo ""
 
-# Train Restormer 3297 with combined loss
+# Train Restormer 3296x2192 with combined loss
 python3 train_restormer_512_combined_loss.py \
     --train_jsonl data_splits/proper_split/train.jsonl \
     --val_jsonl data_splits/proper_split/val.jsonl \
     --output_dir outputs_restormer_3296 \
     --resolution 3296 \
-    --batch_size 1 \
+    --batch_size 2 \
     --lr 2e-4 \
     --warmup_epochs 5 \
     --patience 15 \
     --epochs 100 \
-    --use_checkpointing \
     --num_workers 4
 
 echo ""
@@ -51,4 +50,4 @@ echo "Date: $(date)"
 echo "========================================================================"
 echo ""
 echo "Next step: Finetune encoder"
-echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3296/checkpoint_best.pt --resolution 3296 --batch_size 1 --epochs 50"
+echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3296/checkpoint_best.pt --resolution 3296 --batch_size 2 --epochs 50"
