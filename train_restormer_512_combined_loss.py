@@ -48,8 +48,13 @@ from training.restormer import create_restormer
 class HDRDataset(Dataset):
     """HDR Real Estate Dataset with proper split handling"""
 
-    def __init__(self, jsonl_path, resolution=512, augment=False):
-        self.resolution = resolution
+    def __init__(self, jsonl_path, resolution=512, height=None, augment=False):
+        self.resolution = resolution  # width
+        # Height: if not specified, calculate from 3297:2201 aspect ratio, ensure divisible by 16
+        if height is None:
+            self.height = ((resolution * 2201 // 3297) // 16) * 16
+        else:
+            self.height = height
         self.augment = augment
 
         self.samples = []
@@ -58,6 +63,7 @@ class HDRDataset(Dataset):
                 self.samples.append(json.loads(line.strip()))
 
         print(f"Loaded {len(self.samples)} samples from {jsonl_path}")
+        print(f"Resolution: {self.resolution} x {self.height}")
 
     def __len__(self):
         return len(self.samples)
@@ -71,10 +77,10 @@ class HDRDataset(Dataset):
         input_img = Image.open(input_path).convert('RGB')
         target_img = Image.open(target_path).convert('RGB')
 
-        # Resize
-        input_img = TF.resize(input_img, (self.resolution, self.resolution),
+        # Resize maintaining aspect ratio (width x height)
+        input_img = TF.resize(input_img, (self.height, self.resolution),
                               interpolation=T.InterpolationMode.BILINEAR)
-        target_img = TF.resize(target_img, (self.resolution, self.resolution),
+        target_img = TF.resize(target_img, (self.height, self.resolution),
                                interpolation=T.InterpolationMode.BILINEAR)
 
         # Light augmentation (horizontal flip only - preserves color)
