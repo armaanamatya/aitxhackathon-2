@@ -3,8 +3,9 @@
 # Usage: ./train_restormer_512_combined.sh
 
 echo "========================================================================"
-echo "RESTORMER 3297x2201 - COMBINED LOSS (L1 + Window + Color)"
+echo "RESTORMER 3296 - COMBINED LOSS (L1 + Window + Color)"
 echo "========================================================================"
+echo "NOTE: Resolution must be divisible by 16 (Restormer has 4 downsample levels)"
 echo "Date: $(date)"
 echo "Node: $(hostname)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
@@ -33,8 +34,8 @@ echo ""
 python3 train_restormer_512_combined_loss.py \
     --train_jsonl data_splits/proper_split/train.jsonl \
     --val_jsonl data_splits/proper_split/val.jsonl \
-    --output_dir outputs_restormer_3297 \
-    --resolution 3297 \
+    --output_dir outputs_restormer_3296 \
+    --resolution 3296 \
     --batch_size 1 \
     --lr 2e-4 \
     --warmup_epochs 5 \
@@ -50,4 +51,4 @@ echo "Date: $(date)"
 echo "========================================================================"
 echo ""
 echo "Next step: Finetune encoder"
-echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3297/checkpoint_best.pt --resolution 3297 --batch_size 1 --epochs 50"
+echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3296/checkpoint_best.pt --resolution 3296 --batch_size 1 --epochs 50"
