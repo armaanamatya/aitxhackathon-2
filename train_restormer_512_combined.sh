@@ -1,22 +1,26 @@
 #!/bin/bash
-# Train Restormer at 3297x2201 resolution on Brev B300
+# Train Restormer at 3296x2192 resolution on Brev B300
 # Usage: ./train_restormer_512_combined.sh
 
 echo "========================================================================"
-echo "RESTORMER 3296 - COMBINED LOSS (L1 + Window + Color)"
+echo "RESTORMER 3296x2192 - COMBINED LOSS (L1 + Window + Color)"
 echo "========================================================================"
-echo "NOTE: Resolution must be divisible by 16 (Restormer has 4 downsample levels)"
 echo "Date: $(date)"
 echo "Node: $(hostname)"
-echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
+echo "GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo 'N/A')"
 echo ""
-echo "DATA SPLIT:"
+echo "CONFIG:"
+echo "  - Resolution: 3296 x 2192 (aspect ratio preserved, divisible by 16)"
+echo "  - Batch size: 1"
+echo "  - Gradient checkpointing: ENABLED"
+echo "  - Expected memory: ~60GB"
+echo ""
+echo "DATA SPLIT (no leakage):"
 echo "  - TEST: 10 images (HELD OUT - never seen)"
 echo "  - TRAIN: 511 images (90%)"
 echo "  - VAL: 56 images (10%)"
 echo ""
 echo "LOSS: L1(1.0) + Window(0.5) + BrightRegionSaturation(0.3)"
-echo "RESOLUTION: 3296 x 2192 (aspect ratio preserved)"
 echo ""
 
 # Verify data splits exist
@@ -29,6 +33,9 @@ fi
 echo "Data splits verified:"
 wc -l data_splits/proper_split/*.jsonl
 echo ""
+echo "========================================================================"
+echo "Starting training..."
+echo "========================================================================"
 
 # Train Restormer 3296x2192 with combined loss
 python3 train_restormer_512_combined_loss.py \
@@ -51,4 +58,4 @@ echo "Date: $(date)"
 echo "========================================================================"
 echo ""
 echo "Next step: Finetune encoder"
-echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3296/checkpoint_best.pt --resolution 3296 --batch_size 1 --epochs 50"
+echo "python3 finetune_encoder.py --checkpoint outputs_restormer_3296/checkpoint_best.pt --resolution 3296 --batch_size 1 --epochs 50 --use_checkpointing"
