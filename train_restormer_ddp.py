@@ -240,7 +240,7 @@ def main():
     parser.add_argument('--output_dir', type=str, default='outputs_restormer_ddp')
     parser.add_argument('--resolution', type=int, default=3296)
     parser.add_argument('--model_size', type=str, default='base')
-    parser.add_argument('--batch_size', type=int, default=4, help='Total batch size across all GPUs')
+    parser.add_argument('--batch_size', type=int, default=2, help='Total batch size across all GPUs')
     parser.add_argument('--lr', type=float, default=2e-4)
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--warmup_epochs', type=int, default=5)
@@ -362,18 +362,21 @@ def main():
 
         is_best = val_l1 < best_val_l1
 
+        # Update best_val_l1 on all ranks for proper early stopping
+        if is_best:
+            best_val_l1 = val_l1
+            patience_counter = 0
+        else:
+            patience_counter += 1
+
         if is_main:
             if is_best:
-                best_val_l1 = val_l1
-                patience_counter = 0
                 torch.save({
                     'epoch': epoch,
                     'model_state_dict': model.module.state_dict(),
                     'val_l1': best_val_l1,
                     'args': vars(args)
                 }, Path(args.output_dir) / 'checkpoint_best.pt')
-            else:
-                patience_counter += 1
 
             marker = "* BEST" if is_best else ""
             print(f"Epoch {epoch+1:3d}/{args.epochs} | "
@@ -387,6 +390,7 @@ def main():
                 'args': vars(args)
             }, Path(args.output_dir) / 'checkpoint_latest.pt')
 
+        # Early stopping - all ranks must break together
         if patience_counter >= args.patience:
             if is_main:
                 print(f"\nEarly stopping at epoch {epoch+1}")
