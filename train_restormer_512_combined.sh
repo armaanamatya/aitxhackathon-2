@@ -41,6 +41,7 @@ python3 train_restormer_512_combined_loss.py \
     --warmup_epochs 5 \
     --patience 15 \
     --epochs 100 \
+    --use_checkpointing \
     --num_workers 4
 
 echo ""
