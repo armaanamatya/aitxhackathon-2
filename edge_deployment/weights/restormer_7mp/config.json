@@ -1,0 +1,128 @@
+{
+  "model_name": "Restormer 7MP - Real Estate HDR",
+  "model_type": "restormer",
+  "model_variant": "base",
+  "training_resolution": "7MP (native resolution)",
+
+  "training": {
+    "framework": "PyTorch DDP",
+    "resolution": "7MP (3296x2192 typical)",
+    "batch_size": 2,
+    "learning_rate": 0.0002,
+    "optimizer": "AdamW",
+    "weight_decay": 0.0001,
+    "scheduler": "CosineAnnealingLR",
+    "epochs_trained": 2,
+    "mixed_precision": true,
+    "gradient_checkpointing": true,
+
+    "data_split": {
+      "train_samples": 511,
+      "val_samples": 56,
+      "test_samples": 10,
+      "split_type": "proper_split",
+      "augmentation": "horizontal_flip, vertical_flip"
+    },
+
+    "hardware": {
+      "trained_on": "NVIDIA DGX Cloud",
+      "gpu": "A100 80GB",
+      "cuda_version": "12.1+",
+      "pytorch_version": "2.6+",
+      "training_time": "~2 hours"
+    }
+  },
+
+  "loss_function": {
+    "type": "combined",
+    "components": {
+      "l1_loss": {
+        "weight": 1.0,
+        "description": "Base pixel-wise L1 loss"
+      },
+      "window_aware_loss": {
+        "weight": 0.3,
+        "brightness_threshold": 0.7,
+        "window_weight": 2.0,
+        "description": "Extra weight for bright regions (windows, sky)"
+      },
+      "saturation_loss": {
+        "weight": 0.2,
+        "description": "Saturation preservation in bright regions"
+      }
+    }
+  },
+
+  "performance": {
+    "validation": {
+      "l1": 0.0855,
+      "epoch": 2,
+      "note": "Best checkpoint at epoch 2"
+    },
+    "expected_inference": {
+      "a100_80gb": {
+        "throughput_fps": "0.8-1.2 (single 7MP image)",
+        "batch_size": 2,
+        "precision": "fp16",
+        "memory_usage": "30-35 GB per image"
+      },
+      "apple_m2_ultra": {
+        "throughput_fps": "0.8-1.2 (single 7MP image)",
+        "batch_size": 1,
+        "precision": "fp16",
+        "memory_usage": "30 GB per image"
+      },
+      "jetson_agx_orin": {
+        "throughput_fps": "Requires tiling (see edge optimization guide)",
+        "batch_size": 1,
+        "precision": "int8",
+        "note": "Use tiling for memory efficiency"
+      }
+    }
+  },
+
+  "architecture": {
+    "type": "encoder_decoder_transformer",
+    "total_params": 25423939,
+    "model_size_mb": 96.97,
+    "encoder_decoder": {
+      "num_blocks": [4, 6, 6, 8],
+      "num_heads": [1, 2, 4, 8],
+      "channels": [48, 96, 192, 384],
+      "num_refinement_blocks": 4,
+      "expansion_factor": 2.66
+    }
+  },
+
+  "deployment": {
+    "supported_backends": [
+      "PyTorch (CUDA)",
+      "PyTorch (MPS - Apple Silicon)",
+      "PyTorch (CPU)",
+      "TensorRT (NVIDIA)",
+      "CoreML (Apple)",
+      "ONNX"
+    ],
+    "minimum_requirements": {
+      "memory_single_pass": "128 GB unified or 64 GB GPU + gradient checkpointing",
+      "memory_with_tiling": "8 GB (tile size 512x512)",
+      "compute": "10+ TFLOPS recommended"
+    },
+    "recommended_hardware": [
+      "NVIDIA A100 80GB (datacenter)",
+      "NVIDIA H100 80GB (datacenter)",
+      "Apple M2 Ultra 192GB (edge, single-pass)",
+      "NVIDIA Jetson AGX Orin 32GB (edge, with tiling)"
+    ]
+  },
+
+  "input_output": {
+    "input_channels": 3,
+    "output_channels": 3,
+    "input_range": [0, 1],
+    "output_range": [0, 1],
+    "typical_resolution": "7MP (3296x2192, 3840x2160, etc.)",
+    "normalization": "none",
+    "preprocessing": "none (native resolution)"
+  }
+}

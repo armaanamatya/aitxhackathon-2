@@ -1,0 +1,21 @@
+# Real Estate HDR - 7MP Inference Requirements
+
+# Core dependencies
+torch>=2.0.0
+torchvision>=0.15.0
+pillow>=9.0.0
+numpy>=1.21.0
+
+# Optional: For TensorRT optimization (NVIDIA GPUs)
+# torch-tensorrt>=2.0.0  # Uncomment if using TensorRT
+
+# Optional: For CoreML export (Apple Silicon)
+# coremltools>=7.0  # Uncomment if exporting to CoreML
+
+# Optional: For ONNX export
+# onnx>=1.14.0  # Uncomment if exporting to ONNX
+# onnxruntime>=1.15.0  # Uncomment if using ONNX Runtime
+
+# Development dependencies (optional)
+# tqdm>=4.65.0  # Progress bars
+# matplotlib>=3.7.0  # Visualization
