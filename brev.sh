@@ -2,11 +2,13 @@
 set -e
 
 echo "=========================================="
-echo "  Brev Setup: Restormer HDR Training"
+echo "  Brev Setup: Restormer 3297x2201 Training"
 echo "=========================================="
 
-# System updates and essentials
-echo "[1/6] Installing system packages..."
+# =============================================================================
+# 1. System Setup
+# =============================================================================
+echo "[1/7] Installing system packages..."
 sudo apt-get update
 sudo apt-get install -y \
     git \
@@ -22,16 +24,22 @@ sudo apt-get install -y \
     libxext6 \
     libxrender-dev
 
-# Upgrade pip
-echo "[2/6] Upgrading pip..."
+# =============================================================================
+# 2. Python Setup
+# =============================================================================
+echo "[2/7] Upgrading pip..."
 pip install --upgrade pip setuptools wheel
 
-# Install PyTorch with CUDA 12.1
-echo "[3/6] Installing PyTorch with CUDA..."
+# =============================================================================
+# 3. PyTorch with CUDA
+# =============================================================================
+echo "[3/7] Installing PyTorch with CUDA 12.1..."
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install training dependencies
-echo "[4/6] Installing training dependencies..."
+# =============================================================================
+# 4. Training Dependencies
+# =============================================================================
+echo "[4/7] Installing training dependencies..."
 pip install \
     numpy \
     Pillow \
@@ -45,16 +53,35 @@ pip install \
     tensorboard \
     accelerate
 
-# Clone repository (skip if already in repo)
-echo "[5/6] Setting up repository..."
+# =============================================================================
+# 5. Clone Repository
+# =============================================================================
+echo "[5/7] Cloning repository..."
 cd ~
-if [ ! -d "autohdr-real-estate-577" ]; then
-    git clone https://github.com/sww35/autohdr-real-estate-577.git
+if [ ! -d "aitxhackathon-2" ]; then
+    git clone -b shell https://github.com/armaanamatya/aitxhackathon-2.git
 fi
-cd autohdr-real-estate-577
+cd aitxhackathon-2
 
-# Verify GPU setup
-echo "[6/6] Verifying GPU..."
+# =============================================================================
+# 6. Download Dataset from Dropbox
+# =============================================================================
+echo "[6/7] Downloading dataset from Dropbox..."
+if [ ! -d "images" ]; then
+    wget --continue --timeout=0 -O dataset.zip "https://www.dropbox.com/scl/fo/fvr1xwtp89n3n7zewtbk1/AOIpVeRP3gs0x-sMx4dFPnE?rlkey=sdxwning0n70dgyuijmeqep6e&st=axxovbtt&dl=1"
+    unzip dataset.zip
+    rm dataset.zip
+    echo "Dataset downloaded and extracted."
+else
+    echo "Dataset already exists, skipping download."
+fi
+
+# =============================================================================
+# 7. Verify Setup
+# =============================================================================
+echo "[7/7] Verifying setup..."
+
+# Check GPU
 nvidia-smi
 python3 << 'EOF'
 import torch
@@ -63,27 +90,46 @@ print(f"CUDA available: {torch.cuda.is_available()}")
 if torch.cuda.is_available():
     print(f"GPU: {torch.cuda.get_device_name(0)}")
     print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
-    print(f"CUDA version: {torch.version.cuda}")
 EOF
+
+# Check data splits
+echo ""
+echo "Data splits:"
+wc -l data_splits/proper_split/*.jsonl
+
+# Check essential files
+echo ""
+echo "Essential files:"
+ls -la train_restormer_512_combined_loss.py
+ls -la finetune_encoder.py
+ls -la src/training/restormer.py
 
 echo ""
 echo "=========================================="
 echo "  Setup Complete!"
 echo "=========================================="
 echo ""
-echo "Next steps:"
-echo "  1. Upload your dataset:"
-echo "     scp -r /local/path/to/dataset brev-<instance>:~/autohdr-real-estate-577/"
+echo "To start training, run:"
 echo ""
-echo "  2. Start training:"
-echo "     cd ~/autohdr-real-estate-577"
-echo "     python src/training/train_restormer_large.py \\"
-echo "       --data_root . \\"
-echo "       --jsonl_path train.jsonl \\"
-echo "       --image_size 1024 \\"
-echo "       --batch_size 2 \\"
-echo "       --model_size large"
+echo "  tmux new -s train"
 echo ""
-echo "  3. Use tmux for persistent sessions:"
-echo "     tmux new -s train"
+echo "  python3 train_restormer_512_combined_loss.py \\"
+echo "      --train_jsonl data_splits/proper_split/train.jsonl \\"
+echo "      --val_jsonl data_splits/proper_split/val.jsonl \\"
+echo "      --output_dir outputs_restormer_3297 \\"
+echo "      --resolution 3297 \\"
+echo "      --batch_size 2 \\"
+echo "      --lr 2e-4 \\"
+echo "      --warmup_epochs 5 \\"
+echo "      --patience 15 \\"
+echo "      --epochs 100"
 echo ""
+echo "After training completes, finetune encoder:"
+echo ""
+echo "  python3 finetune_encoder.py \\"
+echo "      --checkpoint outputs_restormer_3297/checkpoint_best.pt \\"
+echo "      --resolution 3297 \\"
+echo "      --batch_size 1 \\"
+echo "      --epochs 50"
+echo ""
+echo "=========================================="
