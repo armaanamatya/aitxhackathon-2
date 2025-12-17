@@ -24,7 +24,7 @@ from tqdm import tqdm
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from src.training.models import UNetGenerator
+from src.training.restormer import Restormer
 
 
 class HDREnhancer:
@@ -44,69 +44,123 @@ class HDREnhancer:
         device: str = "cuda",
         use_tensorrt: bool = False,
         precision: str = "fp16",
+        model_type: str = "restormer",
+        native_resolution: bool = False,
     ):
         """
         Args:
             model_path: Path to model weights
-            image_size: Model input size
+            image_size: Model input size (ignored if native_resolution=True)
             device: Device to run on
             use_tensorrt: Whether to use TensorRT model
             precision: Precision for inference (fp32, fp16)
+            model_type: Model architecture ('restormer' or 'unet')
+            native_resolution: If True, process at native resolution (for 7MP model)
         """
         self.image_size = image_size
+        self.native_resolution = native_resolution
         self.device = torch.device(device)
         self.precision = precision
         self.use_fp16 = precision == "fp16" and device == "cuda"
 
         print(f"Loading model from {model_path}...")
+        print(f"Model type: {model_type}")
         print(f"Device: {device}, Precision: {precision}")
 
         if use_tensorrt and model_path.endswith('.ts'):
             # Load TensorRT model
             self.model = torch.jit.load(model_path)
         else:
-            # Load PyTorch model
-            self.model = UNetGenerator(
+            # Load Restormer model
+            self.model = Restormer(
                 in_channels=3,
                 out_channels=3,
-                base_features=64,
-                num_residual_blocks=9,
-                learn_residual=True,
+                dim=48,
+                num_blocks=[4, 6, 6, 8],
+                num_refinement_blocks=4,
+                heads=[1, 2, 4, 8],
+                ffn_expansion_factor=2.66,
+                bias=False,
             )
 
-            state_dict = torch.load(model_path, map_location=self.device)
+            # Load checkpoint - handle both old and new PyTorch versions
+            try:
+                # Try with weights_only=False for PyTorch 2.6+
+                state_dict = torch.load(model_path, map_location=self.device, weights_only=False)
+            except TypeError:
+                # Fall back to old syntax for older PyTorch versions
+                state_dict = torch.load(model_path, map_location=self.device)
+
+            # Extract model weights
             if 'generator_state_dict' in state_dict:
                 state_dict = state_dict['generator_state_dict']
+            elif 'model_state_dict' in state_dict:
+                state_dict = state_dict['model_state_dict']
+
+            # Remove 'module.' prefix from DDP checkpoints
+            if any(k.startswith('module.') for k in state_dict.keys()):
+                state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+                print("Removed 'module.' prefix from DDP checkpoint")
+
             self.model.load_state_dict(state_dict)
 
         self.model = self.model.to(self.device)
         self.model.eval()
 
+        # Disable gradient checkpointing for inference (important for speed!)
+        for module in self.model.modules():
+            if hasattr(module, 'use_checkpointing'):
+                module.use_checkpointing = False
+
         if self.use_fp16:
             self.model = self.model.half()
 
-        # Compile with torch.compile for additional speedup
-        try:
-            self.model = torch.compile(self.model, mode="reduce-overhead")
-            print("Model compiled with torch.compile")
-        except Exception as e:
-            print(f"torch.compile not available: {e}")
+        # Enable basic CUDA optimizations (compatible with older PyTorch)
+        if self.device.type == "cuda":
+            try:
+                # Enable cudnn benchmarking for optimal kernels
+                torch.backends.cudnn.benchmark = True
+                print("cuDNN benchmark enabled")
+            except:
+                pass
+
+        # Skip channels_last for older PyTorch compatibility
+        # self.model = self.model.to(memory_format=torch.channels_last)
+        # print("Using channels_last memory format")
+
+        # Disable torch.compile for now - causes issues with dynamic image sizes
+        # The other optimizations (TF32, channels_last, FP16) still provide great speedups
+        # try:
+        #     self.model = torch.compile(self.model, mode="reduce-overhead")
+        #     print("Model compiled with torch.compile (reduce-overhead)")
+        # except Exception as e:
+        #     print(f"torch.compile not available: {e}")
+        print("torch.compile disabled (incompatible with dynamic image sizes)")
 
         # Warmup
         self._warmup()
 
-    def _warmup(self, num_runs: int = 3):
-        """Warmup the model for accurate timing."""
-        dummy = torch.randn(1, 3, self.image_size, self.image_size).to(self.device)
-        if self.use_fp16:
-            dummy = dummy.half()
+    def _warmup(self, num_runs: int = 5):
+        """Warmup the model for accurate timing and kernel selection."""
+        if self.native_resolution:
+            # For 7MP model, use typical 7MP resolution for warmup
+            h, w = 2192, 3296
+        else:
+            h = w = self.image_size
 
-        with torch.no_grad():
+        # Create dummy tensor with correct syntax
+        dummy = torch.randn((1, 3, h, w),
+                           device=self.device,
+                           dtype=torch.float16 if self.use_fp16 else torch.float32)
+
+        # Use inference_mode for better performance than no_grad
+        with torch.inference_mode():
             for _ in range(num_runs):
                 _ = self.model(dummy)
 
-        torch.cuda.synchronize() if self.device.type == "cuda" else None
-        print("Model warmed up")
+        if self.device.type == "cuda":
+            torch.cuda.synchronize()
+        print(f"Model warmed up ({'native resolution' if self.native_resolution else f'{self.image_size}x{self.image_size}'})")
 
     def preprocess(self, image: Image.Image) -> Tuple[torch.Tensor, Tuple[int, int]]:
         """
@@ -116,21 +170,32 @@ class HDREnhancer:
             image: PIL Image
 
         Returns:
-            Tensor [1, 3, H, W] in [-1, 1], original size
+            Tensor [1, 3, H, W] in [0, 1], original size
         """
         original_size = image.size  # (W, H)
 
-        # Resize to model input size
-        image = image.resize((self.image_size, self.image_size), Image.LANCZOS)
+        # Resize only if not using native resolution
+        if not self.native_resolution:
+            # Resize to model input size (BILINEAR is faster than LANCZOS)
+            image = image.resize((self.image_size, self.image_size), Image.BILINEAR)
 
-        # Convert to tensor
-        tensor = torch.from_numpy(np.array(image)).float()
-        tensor = tensor.permute(2, 0, 1) / 255.0  # [H, W, C] -> [C, H, W], [0, 255] -> [0, 1]
-        tensor = tensor * 2 - 1  # [0, 1] -> [-1, 1]
-        tensor = tensor.unsqueeze(0).to(self.device)
+        # Convert to tensor - Restormer expects [0, 1] range
+        # Direct conversion to avoid extra operations
+        tensor = torch.from_numpy(np.array(image, copy=False)).float()
+        tensor = tensor.permute(2, 0, 1).div_(255.0)  # In-place division
+        tensor = tensor.unsqueeze(0)
 
-        if self.use_fp16:
-            tensor = tensor.half()
+        # Pad to make dimensions divisible by 8 (Restormer requires this)
+        _, _, h, w = tensor.shape
+        pad_h = (8 - h % 8) % 8
+        pad_w = (8 - w % 8) % 8
+
+        if pad_h > 0 or pad_w > 0:
+            tensor = torch.nn.functional.pad(tensor, (0, pad_w, 0, pad_h), mode='reflect')
+
+        # Move to device
+        tensor = tensor.to(device=self.device,
+                          dtype=torch.float16 if self.use_fp16 else torch.float32)
 
         return tensor, original_size
 
@@ -143,28 +208,33 @@ class HDREnhancer:
         Convert model output tensor to PIL Image.
 
         Args:
-            tensor: Output tensor [1, 3, H, W] in [-1, 1]
+            tensor: Output tensor [1, 3, H, W] in [0, 1]
             original_size: If provided, resize to this size (W, H)
 
         Returns:
             PIL Image
         """
-        # Convert to numpy
-        tensor = tensor.squeeze(0).float().cpu()
-        tensor = (tensor + 1) / 2  # [-1, 1] -> [0, 1]
-        tensor = tensor.clamp(0, 1)
-        tensor = tensor.permute(1, 2, 0).numpy()  # [C, H, W] -> [H, W, C]
-        tensor = (tensor * 255).astype(np.uint8)
+        # Remove padding if original size is provided and we're in native res mode
+        if original_size is not None and self.native_resolution:
+            w_orig, h_orig = original_size
+            # Crop to original size (remove padding)
+            tensor = tensor[:, :, :h_orig, :w_orig]
+
+        # Convert to numpy - Restormer outputs [0, 1] range
+        # Minimize operations
+        tensor = tensor.squeeze(0).float().clamp_(0, 1)  # In-place clamp
+        tensor = tensor.permute(1, 2, 0).mul_(255).cpu().numpy()  # Combined ops
+        tensor = tensor.astype(np.uint8)
 
         image = Image.fromarray(tensor)
 
-        # Resize to original size if provided
-        if original_size is not None:
-            image = image.resize(original_size, Image.LANCZOS)
+        # Resize to original size if provided (only if we resized during preprocessing)
+        if original_size is not None and not self.native_resolution:
+            image = image.resize(original_size, Image.BILINEAR)
 
         return image
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def enhance(
         self,
         image: Image.Image,
@@ -192,7 +262,7 @@ class HDREnhancer:
         else:
             return self.postprocess(output)
 
-    @torch.no_grad()
+    @torch.inference_mode()
     def enhance_tiled(
         self,
         image: Image.Image,

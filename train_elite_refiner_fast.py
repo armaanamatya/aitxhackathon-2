@@ -281,7 +281,7 @@ class FastColorRefinerTrainer:
 
         # Load frozen Restormer896 backbone
         self._log(f"Loading frozen backbone: {self.args.backbone_path}")
-        checkpoint = torch.load(self.args.backbone_path, map_location='cpu')
+        checkpoint = torch.load(self.args.backbone_path, map_location='cpu', weights_only=False)
 
         # Create Restormer using factory function
         from training.restormer import create_restormer

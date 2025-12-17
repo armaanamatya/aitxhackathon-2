@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""
+Efficient Window Recovery Training
+==================================
+
+Memory-efficient training with adaptive zone-based losses.
+Fixes the core problem: model making some windows worse.
+
+Key improvements:
+1. Adaptive thresholds (percentile-based, not fixed)
+2. Color direction loss (ensures correct transformation)
+3. Zone-specific weighting
+"""
+
+import os
+import sys
+import json
+import argparse
+from pathlib import Path
+from tqdm import tqdm
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+from torch.amp import autocast, GradScaler
+import torchvision.transforms.functional as TF
+from PIL import Image
+import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+from training.restormer import create_restormer
+from training.efficient_zone_loss import EfficientWindowRecoveryLoss, create_efficient_window_loss
+
+
+class HDRDataset(Dataset):
+    def __init__(self, jsonl_path, resolution=512, augment=False):
+        self.resolution = resolution
+        self.augment = augment
+
+        with open(jsonl_path) as f:
+            self.samples = [json.loads(line) for line in f]
+
+        print(f"Loaded {len(self.samples)} samples")
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+
+        input_path = sample.get('input', sample.get('src'))
+        target_path = sample.get('target', sample.get('tar'))
+
+        input_img = Image.open(input_path).convert('RGB')
+        target_img = Image.open(target_path).convert('RGB')
+
+        input_img = TF.resize(input_img, (self.resolution, self.resolution))
+        target_img = TF.resize(target_img, (self.resolution, self.resolution))
+
+        if self.augment:
+            if torch.rand(1) > 0.5:
+                input_img = TF.hflip(input_img)
+                target_img = TF.hflip(target_img)
+
+        input_tensor = TF.to_tensor(input_img)
+        target_tensor = TF.to_tensor(target_img)
+
+        return input_tensor, target_tensor
+
+
+def compute_metrics(pred, target):
+    with torch.no_grad():
+        l1 = F.l1_loss(pred, target).item()
+        mse = F.mse_loss(pred, target)
+        psnr = 10 * torch.log10(1.0 / (mse + 1e-8)).item()
+        return l1, psnr
+
+
+def train_epoch(model, dataloader, criterion, optimizer, scaler, device, epoch, accum_steps=2):
+    model.train()
+
+    total_loss = 0
+    optimizer.zero_grad()
+
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
+
+    for batch_idx, (input_img, target_img) in enumerate(pbar):
+        input_img = input_img.to(device)
+        target_img = target_img.to(device)
+
+        with autocast('cuda'):
+            output = model(input_img)
+            output = torch.clamp(output, 0, 1)
+
+            loss, components, _ = criterion(output, target_img, input_img, return_components=True)
+            loss = loss / accum_steps
+
+        scaler.scale(loss).backward()
+
+        if (batch_idx + 1) % accum_steps == 0:
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+            optimizer.zero_grad()
+
+        total_loss += loss.item() * accum_steps
+
+        blown_out = components.get('blown_out_l1', torch.tensor(0.0))
+        if isinstance(blown_out, torch.Tensor):
+            blown_out = blown_out.item()
+
+        pbar.set_postfix({
+            'loss': f"{loss.item() * accum_steps:.4f}",
+            'blown_out': f"{blown_out:.4f}",
+        })
+
+    return total_loss / len(dataloader)
+
+
+def validate(model, dataloader, criterion, device):
+    model.eval()
+
+    total_loss = 0
+    metrics = {'l1': [], 'psnr': []}
+    zone_l1 = {'blown_out': [], 'highlight': []}
+
+    with torch.no_grad():
+        for input_img, target_img in tqdm(dataloader, desc="Val"):
+            input_img = input_img.to(device)
+            target_img = target_img.to(device)
+
+            output = model(input_img)
+            output = torch.clamp(output, 0, 1)
+
+            loss, components, _ = criterion(output, target_img, input_img, return_components=True)
+            total_loss += loss.item()
+
+            l1, psnr = compute_metrics(output, target_img)
+            metrics['l1'].append(l1)
+            metrics['psnr'].append(psnr)
+
+            for zone in zone_l1.keys():
+                key = f'{zone}_l1'
+                if key in components:
+                    val = components[key]
+                    zone_l1[zone].append(val.item() if isinstance(val, torch.Tensor) else val)
+
+    return (
+        total_loss / len(dataloader),
+        np.mean(metrics['l1']),
+        np.mean(metrics['psnr']),
+        {k: np.mean(v) if v else 0 for k, v in zone_l1.items()}
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--resolution', type=int, default=512)
+    parser.add_argument('--batch_size', type=int, default=2)
+    parser.add_argument('--accum_steps', type=int, default=2)
+    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--output_dir', type=str, default='outputs_efficient_window')
+    parser.add_argument('--checkpoint', type=str, default=None)
+    parser.add_argument('--pretrained', type=str, default=None)
+    parser.add_argument('--preset', type=str, default='aggressive')
+    args = parser.parse_args()
+
+    print("=" * 60)
+    print("EFFICIENT WINDOW RECOVERY TRAINING")
+    print("=" * 60)
+    print(f"Resolution: {args.resolution}")
+    print(f"Batch size: {args.batch_size} x {args.accum_steps} accum = {args.batch_size * args.accum_steps} effective")
+    print(f"Epochs: {args.epochs}")
+    print(f"Preset: {args.preset}")
+    print()
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Device: {device}")
+    if torch.cuda.is_available():
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print()
+
+    # Data
+    train_dataset = HDRDataset('data_splits/proper_split/train.jsonl', args.resolution, augment=True)
+    val_dataset = HDRDataset('data_splits/proper_split/val.jsonl', args.resolution)
+
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
+
+    print(f"Train: {len(train_dataset)} samples")
+    print(f"Val: {len(val_dataset)} samples")
+    print()
+
+    # Model - use 'small' variant to fit in memory
+    # small: 32 dim, ~8M params vs base: 48 dim, ~26M params
+    model = create_restormer('small').to(device)
+
+    # Enable gradient checkpointing
+    if hasattr(model, 'gradient_checkpointing_enable'):
+        model.gradient_checkpointing_enable()
+    else:
+        # Manual gradient checkpointing via torch
+        from torch.utils.checkpoint import checkpoint
+        model.use_checkpoint = True
+
+    if args.pretrained:
+        print(f"Loading pretrained: {args.pretrained}")
+        ckpt = torch.load(args.pretrained, map_location='cpu', weights_only=False)
+        state = ckpt.get('model_state_dict', ckpt)
+        model.load_state_dict(state)
+
+    params = sum(p.numel() for p in model.parameters())
+    print(f"Parameters: {params:,}")
+    print()
+
+    # Loss
+    criterion = create_efficient_window_loss(args.preset)
+    print("Loss: Efficient Zone Loss")
+    print(f"  Blown-out weight: {criterion.zone_loss.zone_weights['blown_out']}")
+    print(f"  Highlight weight: {criterion.zone_loss.zone_weights['highlight']}")
+    print(f"  Direction loss weight: {criterion.zone_loss.lambda_direction}")
+    print()
+
+    # Optimizer
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
+    scaler = GradScaler('cuda')
+
+    # Resume
+    start_epoch = 0
+    best_val_l1 = float('inf')
+    best_blown_out = float('inf')
+
+    if args.checkpoint:
+        ckpt = torch.load(args.checkpoint, map_location='cpu', weights_only=False)
+        model.load_state_dict(ckpt['model_state_dict'])
+        optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        start_epoch = ckpt['epoch'] + 1
+        best_val_l1 = ckpt.get('best_val_l1', float('inf'))
+        best_blown_out = ckpt.get('best_blown_out', float('inf'))
+        print(f"Resumed from epoch {start_epoch}")
+
+    # Training
+    print("=" * 60)
+    print("TRAINING")
+    print("=" * 60)
+
+    for epoch in range(start_epoch, args.epochs):
+        print(f"\nEpoch {epoch+1}/{args.epochs}")
+
+        train_loss = train_epoch(model, train_loader, criterion, optimizer, scaler, device, epoch+1, args.accum_steps)
+        val_loss, val_l1, val_psnr, zone_metrics = validate(model, val_loader, criterion, device)
+
+        scheduler.step()
+
+        print(f"Train Loss: {train_loss:.4f}")
+        print(f"Val: L1={val_l1:.4f}, PSNR={val_psnr:.2f}")
+        print(f"Zone L1: blown_out={zone_metrics['blown_out']:.4f}, highlight={zone_metrics['highlight']:.4f}")
+
+        # Save
+        ckpt = {
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'val_l1': val_l1,
+            'val_psnr': val_psnr,
+            'zone_metrics': zone_metrics,
+            'best_val_l1': best_val_l1,
+            'best_blown_out': best_blown_out,
+        }
+
+        torch.save(ckpt, output_dir / 'checkpoint_last.pt')
+
+        if val_l1 < best_val_l1:
+            best_val_l1 = val_l1
+            torch.save(ckpt, output_dir / 'checkpoint_best.pt')
+            print(f"  -> New best overall: {val_l1:.4f}")
+
+        if zone_metrics['blown_out'] < best_blown_out:
+            best_blown_out = zone_metrics['blown_out']
+            torch.save(ckpt, output_dir / 'checkpoint_best_window.pt')
+            print(f"  -> New best window: {zone_metrics['blown_out']:.4f}")
+
+    print("\n" + "=" * 60)
+    print("DONE")
+    print("=" * 60)
+    print(f"Best L1: {best_val_l1:.4f}")
+    print(f"Best Window: {best_blown_out:.4f}")
+
+
+if __name__ == '__main__':
+    main()
